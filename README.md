@@ -53,6 +53,6 @@ Chess.com - глобальный сервис.
 
 1. <a id="source1"></a>[Chess.com - The Board Report, Q2 2026](https://www.chess.com/board-reports/2026-q2) - 10,2 млн DAU и 267+ млн зарегистрированных пользователей.
 
-2. <a id="source2"></a>[No Priors - интервью с CEO Chess.com Erik Allebest](https://www.chess.com/article/view/partner-with-chesscom) - 50+ млн MAU.
+2. <a id="source2"></a>[Chess.com - Partner with Chess.com](https://www.chess.com/article/view/partner-with-chesscom) - 50+ млн MAU.
 
 3. <a id="source3"></a>[Chess.com - Countries That Love Online Chess The Most](https://www.chess.com/article/view/chess-countries) - география аудитории.
