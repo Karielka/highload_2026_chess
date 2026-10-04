@@ -545,6 +545,321 @@ Keepalived контролирует доступность активного NG
 
 ---
 
+# 5. Логическая схема базы данных
+
+В разделе описываются логические сущности и потоки данных без выбора конкретной СУБД, схемы шардинга и физического размещения.
+
+## 5.1. Логическая схема
+
+```mermaid
+erDiagram
+    USER {
+        bigint user_id PK
+        varchar username
+        datetime created_at
+        string status
+        string avatar
+        string country
+    }
+
+    RATING {
+        bigint user_id FK
+        string rating_type
+        int rating
+        int games_played
+        datetime updated_at
+    }
+
+    GAME {
+        uuid game_id PK
+        bigint white_user_id FK
+        bigint black_user_id FK
+        string game_type
+        string time_control
+        string result
+        string termination_reason
+        datetime started_at
+        datetime ended_at
+        text pgn
+    }
+
+    ANALYSIS {
+        uuid game_id PK,FK
+        string status
+        blob positions
+        datetime created_at
+    }
+
+    FAIR_PLAY_REPORT {
+        uuid report_id PK
+        uuid game_id FK
+        bigint reporter_user_id FK
+        string reason
+        text comment
+        datetime created_at
+        string status
+    }
+
+    MATCHMAKING_QUEUE {
+        bigint user_id PK,FK
+        int rating
+        string game_type
+        string time_control
+        json latency_by_region
+        datetime enqueued_at
+    }
+
+    ACTIVE_GAME_STATE {
+        uuid game_id PK
+        string game_region
+        bigint white_user_id FK
+        bigint black_user_id FK
+        string board_state
+        int move_number
+        bigint white_time_ms
+        bigint black_time_ms
+        string turn
+        bigint sequence
+    }
+
+    ACTIVE_GAME_MOVE {
+        uuid game_id PK,FK
+        bigint sequence PK
+        bigint player_user_id FK
+        string from_square
+        string to_square
+        string promotion
+        bigint clock_after_ms
+        datetime created_at
+    }
+
+    GAME_FINISHED_STREAM {
+        uuid game_id
+        blob game_payload
+        datetime created_at
+    }
+
+    ANALYSIS_TASK_STREAM {
+        uuid game_id
+        datetime created_at
+        int attempt
+    }
+
+    RATING }o--|| USER : "user_id"
+
+    GAME }o--|| USER : "white_user_id"
+    GAME }o--|| USER : "black_user_id"
+
+    ANALYSIS ||--|| GAME : "game_id"
+
+    FAIR_PLAY_REPORT }o--|| GAME : "game_id"
+    FAIR_PLAY_REPORT }o--|| USER : "reporter_user_id"
+
+    MATCHMAKING_QUEUE o|--|| USER : "user_id"
+
+    ACTIVE_GAME_STATE }o--|| USER : "white_user_id"
+    ACTIVE_GAME_STATE }o--|| USER : "black_user_id"
+
+    ACTIVE_GAME_MOVE }o--|| ACTIVE_GAME_STATE : "game_id"
+    ACTIVE_GAME_MOVE }o--|| USER : "player_user_id"
+
+    GAME_FINISHED_STREAM ||--|| GAME : "game_id"
+    ANALYSIS_TASK_STREAM ||--|| GAME : "game_id"
+    ANALYSIS ||--o| ANALYSIS_TASK_STREAM : "game_id"
+```
+
+## 5.2. Хранение ходов
+
+Ход игрока хранится отдельно во время активной партии в `ACTIVE_GAME_MOVE`.
+
+Ключ `(game_id, sequence)` однозначно задаёт порядок ходов внутри партии.
+
+Во время игры:
+
+```text
+WS game.move
+    ↓
+ACTIVE_GAME_MOVE
+    ↓
+обновление ACTIVE_GAME_STATE
+```
+
+`ACTIVE_GAME_STATE` хранит текущее состояние доски и часов, а `ACTIVE_GAME_MOVE` — последовательность конкретных ходов.
+
+После завершения партии последовательность ходов сериализуется в PGN и записывается в `GAME.pgn`.
+
+```text
+ACTIVE_GAME_MOVE
+        +
+ACTIVE_GAME_STATE
+        ↓
+game.finished
+        ↓
+GAME_FINISHED_STREAM
+        ↓
+GAME.pgn
+```
+
+После успешного сохранения `GAME` временные `ACTIVE_GAME_STATE` и `ACTIVE_GAME_MOVE` удаляются.
+
+Таким образом, постоянное хранилище не содержит отдельную строку для каждого из примерно `2,462 млрд` полуходов в сутки. Постоянным представлением истории ходов является PGN одной завершённой партии.
+
+## 5.3. Описание сущностей
+
+| Сущность | Назначение |
+| --- | --- |
+| `USER` | Учётная запись пользователя, страна и ссылка на аватар |
+| `RATING` | Текущий рейтинг пользователя для каждой категории игры |
+| `GAME` | Постоянная запись завершённой партии и её PGN |
+| `ANALYSIS` | Сохранённый результат Stockfish |
+| `FAIR_PLAY_REPORT` | Жалоба пользователя на конкретную партию |
+| `MATCHMAKING_QUEUE` | Временная запись игрока, ожидающего соперника |
+| `ACTIVE_GAME_STATE` | Текущее состояние активной партии: позиция, часы, очередь хода и игровой регион |
+| `ACTIVE_GAME_MOVE` | Временная последовательность конкретных ходов активной партии |
+| `GAME_FINISHED_STREAM` | Kafka-поток завершённых партий |
+| `ANALYSIS_TASK_STREAM` | Очередь задач на анализ завершённых партий |
+
+## 5.4. Размеры данных и нагрузка
+
+Размеры, не полученные из публичной статистики, являются проектными оценками. Индексы, репликация и служебные данные конкретных СУБД здесь не учитываются.
+
+| Сущность | Количество и размер | Чтение | Запись |
+| --- | --- | ---: | ---: |
+| `USER` | 267+ млн строк; `≈96 Б/строка` без файла аватара; `≈25,6 ГБ` | не менее `≈712 QPS` для получения данных игроков при matchmaking; дополнительные профильные чтения в MVP не рассчитаны | регистрация пользователей не входит в рассчитанный MVP |
+| `RATING` | `267 млн × K` строк, где `K` — число рейтинговых категорий; `≈32 Б/строка` | `≈712 QPS` для matchmaking | `≈712 row updates/с`, пик `≈760/с` |
+| `GAME` | 30+ млрд строк; `≈2,315 КБ/партия`; `≈69,45 ТБ` | история `≈712 QPS`; страница из 20 игр даёт до `≈14,2 тыс. row reads/с` | `≈356 inserts/с`, пик `≈380/с` |
+| `ANALYSIS` | до 30+ млрд строк; `≈2,5 КБ/строка`; `≈75 ТБ` | `≈712 QPS`, пик `≈760 QPS` | необходимо устойчиво обрабатывать `≈356 результатов/с`, целевой пик `≈380/с` |
+| `FAIR_PLAY_REPORT` | `≈512 Б/строка`; `≈36,3 тыс. новых строк/сутки`; `≈18,6 МБ/сутки` | клиентское чтение не входит в MVP | `≈0,42 inserts/с` |
+| `MATCHMAKING_QUEUE` | `≈160 Б/элемент`; количество активных элементов `≈712 × W`, где `W` — среднее ожидание в секундах | зависит от алгоритма поиска пары | `≈712 enqueue/с + 712 dequeue/с`; пик до `≈1520 mutations/с` |
+| `ACTIVE_GAME_STATE` | `≈1 КБ/партия`; количество активных записей `≈356 × D`, где `D` — средняя длительность партии в секундах | минимум одно чтение текущего состояния на `game.move`: `≈28 490 QPS`, пик `≈30 400+ QPS` | `≈28 490 updates/с`, пик `≈30 400+/с` |
+| `ACTIVE_GAME_MOVE` | `≈64 Б/полуход`; число активных записей зависит от числа текущих партий | при завершении партии считывается последовательность ходов; порядок величины до `≈28 490 row reads/с` | `≈28 490 inserts/с`, пик `≈30 400+/с` |
+| `GAME_FINISHED_STREAM` | `≈2,5 КБ/сообщение`; `30,77 млн сообщений/сутки`; `≈76,9 ГБ/сутки` логического потока | `≈356 msg/с`, пик `≈380/с` | `≈356 msg/с`, пик `≈380/с` |
+| `ANALYSIS_TASK_STREAM` | `≈64 Б/сообщение`; `≈1,97 ГБ/сутки` | `≈356 msg/с`, целевой пик `≈380/с` | `≈356 msg/с`, пик `≈380/с` |
+
+Где:
+
+```text
+K — количество рейтинговых категорий;
+W — среднее время нахождения игрока в matchmaking;
+D — средняя длительность активной партии.
+```
+
+Для `W` и `D` в предыдущих разделах не было подтверждённых данных или проектных допущений, поэтому объём соответствующих временных данных задаётся формулой.
+
+Размер бинарных файлов аватаров также не рассчитывается без отдельного продуктового ограничения на формат и максимальный размер изображения:
+
+```text
+AvatarStorage =
+число пользователей с аватаром × средний размер аватара
+```
+
+## 5.5. Требования к консистентности
+
+| Данные | Требование |
+| --- | --- |
+| `USER` | Изменения профиля должны сохраняться без потери последней подтверждённой записи |
+| `RATING` | Сильная консистентность при пересчёте; новый matchmaking должен использовать уже подтверждённый рейтинг |
+| `ACTIVE_GAME_STATE` | Строгий порядок обработки событий внутри одного `game_id` |
+| `ACTIVE_GAME_MOVE` | `sequence` должен быть уникальным и монотонным внутри партии; перестановка ходов недопустима |
+| `GAME` | Логически одна запись на `game_id`; повторная доставка `game.finished` не создаёт дубль |
+| `ANALYSIS` | Eventual consistency относительно `GAME`; результат может появиться позже партии |
+| `FAIR_PLAY_REPORT` | Жалоба должна быть надёжно сохранена; её дальнейшая обработка может быть асинхронной |
+| `MATCHMAKING_QUEUE` | Один пользователь не должен иметь две одновременно активные записи поиска |
+| `GAME_FINISHED_STREAM` | At-least-once доставка; consumer идемпотентен по `game_id` |
+| `ANALYSIS_TASK_STREAM` | At-least-once; повторная задача не должна создавать второй итоговый анализ |
+
+## 5.6. Распределение нагрузки по ключам
+
+### USER и RATING
+
+Основной ключ:
+
+```text
+user_id
+```
+
+Кардинальность высокая. Нагрузка распределена между большим количеством активных пользователей.
+
+Для рейтинга фактический логический ключ:
+
+```text
+(user_id, rating_type)
+```
+
+### GAME
+
+Запись выполняется по:
+
+```text
+game_id
+```
+
+`game_id` имеет высокую кардинальность, поэтому поток новых партий распределяется равномерно.
+
+История, напротив, ищется по:
+
+```text
+white_user_id
+black_user_id
+```
+
+Следовательно, профиль чтения отличается от профиля записи. Это необходимо учитывать при проектировании индексов и физической схемы.
+
+### ACTIVE_GAME_STATE и ACTIVE_GAME_MOVE
+
+Основной ключ:
+
+```text
+game_id
+```
+
+Все события одной партии должны обрабатываться последовательно.
+
+Разные партии независимы, поэтому нагрузка естественно распределяется по большому количеству `game_id`.
+
+Для ходов внутри партии используется:
+
+```text
+(game_id, sequence)
+```
+
+### MATCHMAKING_QUEUE
+
+Основная группировка:
+
+```text
+game_type
+time_control
+rating range
+```
+
+На популярных контролях времени возможны горячие сегменты очереди.
+
+### ANALYSIS
+
+Основной ключ:
+
+```text
+game_id
+```
+
+Повышенная доля чтений приходится на недавно завершённые партии.
+
+### Kafka-потоки
+
+Для `GAME_FINISHED_STREAM` и `ANALYSIS_TASK_STREAM` естественный partition key:
+
+```text
+game_id
+```
+
+Это позволяет сохранить порядок событий конкретной партии и распределить разные партии между партициями.
+
+---
+
+Конкретный выбор СУБД, форматы индексов, хранение аватаров, партиционирование, шардирование, репликация и физическое размещение данных определяются в разделе 6.
+
+---
 
 
 ## Список источников
