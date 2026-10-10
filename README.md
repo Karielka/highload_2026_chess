@@ -404,7 +404,7 @@ game-{region}.chess.example
 
 Chess.com не публикует DAU по регионам, поэтому точное распределение RPS между ДЦ не рассчитывается.
 
-API-запросы распределяются Latency-Based DNS. Игровая нагрузка распределяется матчмейкером между региональными игровыми кластерами.
+Все API-запросы направляются в Virginia. Игровая нагрузка распределяется матчмейкером между региональными игровыми кластерами. Игровая нагрузка распределяется матчмейкером между региональными игровыми кластерами.
 
 ### 3.5. Размещение данных
 
@@ -446,7 +446,7 @@ consumer in Virginia
 
 ### 3.6. Anycast
 
-Anycast не используется. Для API-запросов достаточно Latency-Based DNS. Игровое WebSocket-соединение после начала партии привязано к конкретному региону.
+Anycast не используется. API имеет единую точку входа в Virginia, а конкретный игровой регион выбирается матчмейкером. Игровое WebSocket-соединение после начала партии привязано к конкретному региону.
 
 ---
 
@@ -501,7 +501,7 @@ N_SSL = ceil(3 040 / 31 485) = 1
 3 040 / 31 485 ≈ 9,7 %
 ```
 
-Следовательно, одного рабочего L7-балансировщика достаточно даже при консервативной оценке полной пиковой нагрузки проекта. С резервированием N+1 требуется:
+Следовательно, одного рабочего L7-балансировщика достаточно даже при консервативной оценке полной пиковой нагрузки проекта. С резервированием N*2 требуется:
 
 ```text
 2 NGINX-балансировщика на ДЦ
@@ -549,12 +549,32 @@ Keepalived контролирует доступность активного NG
 
 В разделе описываются логические сущности и потоки данных без выбора конкретной СУБД, схемы шардинга и физического размещения.
 
-## 5.1. Логическая схема
+## 5.1. Идентификаторы
+
+Автоинкрементные идентификаторы не используются для сущностей, которые потенциально создаются на разных узлах.
+Поскольку независимые шарды могут генерировать пересекающиеся последовательности, а единый генератор последовательности создаёт дополнительную точку синхронизации и отказа.
+
+Для `user_id`, `game_id`, `report_id` и `server_id` используется 64-битный распределённый идентификатор формата:
+
+```text
+timestamp | worker_id | sequence
+```
+
+Размер такого идентификатора — `8 Б`.
+
+Он:
+
+- генерируется без обращения к центральной БД;
+- уникален между узлами;
+- сортируется по времени создания;
+- занимает в два раза меньше места, чем UUID в бинарном виде (`16 Б`).
+
+## 5.2. Логическая схема
 
 ```mermaid
 erDiagram
     USER {
-        bigint user_id PK
+        uint64 user_id PK
         varchar username
         datetime created_at
         string status
@@ -563,7 +583,7 @@ erDiagram
     }
 
     RATING {
-        bigint user_id FK
+        uint64 user_id FK
         string rating_type
         int rating
         int games_played
@@ -571,9 +591,9 @@ erDiagram
     }
 
     GAME {
-        uuid game_id PK
-        bigint white_user_id FK
-        bigint black_user_id FK
+        uint64 game_id PK
+        uint64 white_user_id FK
+        uint64 black_user_id FK
         string game_type
         string time_control
         string result
@@ -584,16 +604,16 @@ erDiagram
     }
 
     ANALYSIS {
-        uuid game_id PK,FK
+        uint64 game_id PK,FK
         string status
         blob positions
         datetime created_at
     }
 
     FAIR_PLAY_REPORT {
-        uuid report_id PK
-        uuid game_id FK
-        bigint reporter_user_id FK
+        uint64 report_id PK
+        uint64 game_id FK
+        uint64 reporter_user_id FK
         string reason
         text comment
         datetime created_at
@@ -601,7 +621,7 @@ erDiagram
     }
 
     MATCHMAKING_QUEUE {
-        bigint user_id PK,FK
+        uint64 user_id PK,FK
         int rating
         string game_type
         string time_control
@@ -610,37 +630,38 @@ erDiagram
     }
 
     ACTIVE_GAME_STATE {
-        uuid game_id PK
+        uint64 game_id PK
         string game_region
-        bigint white_user_id FK
-        bigint black_user_id FK
-        string board_state
-        int move_number
+        uint64 white_user_id FK
+        uint64 black_user_id FK
+        string board_snapshot
+        bigint snapshot_sequence
+        text move_log_prefix
+        json recent_moves
         bigint white_time_ms
         bigint black_time_ms
         string turn
-        bigint sequence
+        datetime updated_at
     }
 
-    ACTIVE_GAME_MOVE {
-        uuid game_id PK,FK
-        bigint sequence PK
-        bigint player_user_id FK
-        string from_square
-        string to_square
-        string promotion
-        bigint clock_after_ms
-        datetime created_at
+    GAME_SERVER {
+        uint64 server_id PK
+        string region
+        string endpoint
+        bool healthy
+        int active_games
+        int capacity
+        datetime last_heartbeat
     }
 
     GAME_FINISHED_STREAM {
-        uuid game_id
+        uint64 game_id
         blob game_payload
         datetime created_at
     }
 
     ANALYSIS_TASK_STREAM {
-        uuid game_id
+        uint64 game_id
         datetime created_at
         int attempt
     }
@@ -660,15 +681,14 @@ erDiagram
     ACTIVE_GAME_STATE }o--|| USER : "white_user_id"
     ACTIVE_GAME_STATE }o--|| USER : "black_user_id"
 
-    ACTIVE_GAME_MOVE }o--|| ACTIVE_GAME_STATE : "game_id"
-    ACTIVE_GAME_MOVE }o--|| USER : "player_user_id"
-
     GAME_FINISHED_STREAM ||--|| GAME : "game_id"
     ANALYSIS_TASK_STREAM ||--|| GAME : "game_id"
     ANALYSIS ||--o| ANALYSIS_TASK_STREAM : "game_id"
 ```
 
-## 5.2. Хранение ходов
+`GAME_SERVER` не имеет внешнего ключа на активную партию. Матчмейкер использует таблицу как реестр доступных игровых серверов и выбирает узел по региону, состоянию `healthy` и текущей загрузке.
+
+## 5.3. Хранение ходов
 
 Ход игрока хранится отдельно во время активной партии в `ACTIVE_GAME_MOVE`.
 
@@ -704,22 +724,48 @@ GAME.pgn
 
 Таким образом, постоянное хранилище не содержит отдельную строку для каждого из примерно `2,462 млрд` полуходов в сутки. Постоянным представлением истории ходов является PGN одной завершённой партии.
 
-## 5.3. Описание сущностей
+## 5.4. Реестр игровых серверов
+
+Матчмейкингу необходим список доступных игровых узлов.
+
+Используется логическая сущность `GAME_SERVER`:
+
+| Поле | Назначение |
+| --- | --- |
+| `server_id` | глобальный идентификатор игрового узла |
+| `region` | регион ДЦ |
+| `endpoint` | внутренний адрес сервера |
+| `healthy` | доступен ли сервер для новых партий |
+| `active_games` | число активных партий |
+| `capacity` | проектная вместимость узла |
+| `last_heartbeat` | время последнего heartbeat |
+
+Матчмейкинг рассматривает только серверы:
+
+```text
+healthy = true
+```
+
+и использует `active_games / capacity` как показатель загрузки.
+
+`healthy` не должен оставаться истинным бесконечно. Если heartbeat не поступает дольше заданного timeout, узел переводится в `unhealthy` и перестаёт получать новые партии.
+
+## 5.5. Описание сущностей
 
 | Сущность | Назначение |
 | --- | --- |
-| `USER` | Учётная запись пользователя, страна и ссылка на аватар |
-| `RATING` | Текущий рейтинг пользователя для каждой категории игры |
-| `GAME` | Постоянная запись завершённой партии и её PGN |
+| `USER` | Учётная запись пользователя |
+| `RATING` | Рейтинг пользователя по типам партий |
+| `GAME` | Постоянная запись завершённой партии и PGN |
 | `ANALYSIS` | Сохранённый результат Stockfish |
-| `FAIR_PLAY_REPORT` | Жалоба пользователя на конкретную партию |
-| `MATCHMAKING_QUEUE` | Временная запись игрока, ожидающего соперника |
-| `ACTIVE_GAME_STATE` | Текущее состояние активной партии: позиция, часы, очередь хода и игровой регион |
-| `ACTIVE_GAME_MOVE` | Временная последовательность конкретных ходов активной партии |
+| `FAIR_PLAY_REPORT` | Жалоба на конкретную партию |
+| `MATCHMAKING_QUEUE` | Очередь игроков, ожидающих соперника |
+| `ACTIVE_GAME_STATE` | Checkpoint активной партии и небольшой хвост последних ходов |
+| `GAME_SERVER` | Реестр игровых серверов, их health и загрузки |
 | `GAME_FINISHED_STREAM` | Kafka-поток завершённых партий |
-| `ANALYSIS_TASK_STREAM` | Очередь задач на анализ завершённых партий |
+| `ANALYSIS_TASK_STREAM` | Kafka-поток задач Stockfish |
 
-## 5.4. Размеры данных и нагрузка
+## 5.6. Размеры данных и нагрузка
 
 Размеры, не полученные из публичной статистики, являются проектными оценками. Индексы, репликация и служебные данные конкретных СУБД здесь не учитываются.
 
@@ -755,7 +801,503 @@ AvatarStorage =
 
 ---
 
-Конкретный выбор СУБД, форматы индексов, хранение аватаров, партиционирование, шардирование, репликация и физическое размещение данных определяются в разделе 6.
+# 6. Физическая схема базы данных
+
+Основная особенность проекта - профиль нагрузки существенно различается по типам данных.
+
+- `USER`, `RATING`, `FAIR_PLAY_REPORT` - обычная OLTP-нагрузка и сравнительно небольшой объём.
+- `GAME` и `ANALYSIS` - небольшая write-нагрузка, но более `144 ТБ` логических данных.
+- `MATCHMAKING_QUEUE`, `ACTIVE_GAME_STATE`, `GAME_SERVER` - горячие временные данные с низкой задержкой.
+- `GAME_FINISHED_STREAM`, `ANALYSIS_TASK_STREAM` - последовательные потоки событий.
+- аватары пользователей - файловые данные.
+
+Поэтому используется несколько типов хранилищ.
+
+## 6.1. Выбор систем хранения
+
+| Данные | Система | Причина |
+| --- | --- | --- |
+| `USER`, `RATING`, `FAIR_PLAY_REPORT` | PostgreSQL | OLTP, транзакции, небольшая относительно архива нагрузка, удобные индексы |
+| `GAME`, `ANALYSIS`, `USER_GAME_HISTORY` | шардированный PostgreSQL | объём требует горизонтального масштабирования; write-QPS небольшой; нужен точный lookup по ключу и история |
+| `MATCHMAKING_QUEUE` | Redis Cluster | временные данные, поиск с низкой задержкой, TTL |
+| `ACTIVE_GAME_STATE` | Redis Cluster | in-memory checkpoint активных партий, высокая частота обновлений |
+| `GAME_SERVER` | Redis Cluster | heartbeat, TTL, быстрое чтение текущей загрузки |
+| `GAME_FINISHED_STREAM`, `ANALYSIS_TASK_STREAM` | Kafka | долговечный streaming buffer, повторная доставка, partitioning по `game_id` |
+| `SHARD_MAP`, выдача `worker_id` | etcd | небольшой объём критичной конфигурации с высокой надёжностью записи |
+| Аватары | S3-compatible object storage | бинарные файлы не хранятся в строках PostgreSQL |
+
+`USER_GAME_HISTORY` появляется только в физической схеме как денормализованный индекс истории.
+
+## 6.2. Физическая схема
+
+```mermaid
+flowchart TD
+    API[API Virginia] --> ACCOUNT[PostgreSQL account cluster]
+    API --> HR[History shard router]
+
+    MM[Matchmaking] --> REDIS[Redis Cluster]
+    GS[Regional game servers] --> REDIS
+
+    GS --> KAFKA[Kafka game.finished]
+    KAFKA --> CONSUMER[Virginia consumer]
+
+    CONSUMER --> HR
+    CONSUMER --> KAFKA2[Kafka analysis.tasks]
+
+    KAFKA2 --> STOCKFISH[Stockfish workers]
+    STOCKFISH --> HR
+
+    HR --> S0[History shard 0]
+    HR --> S1[History shard 1]
+    HR --> SD[...]
+    HR --> S31[History shard 31]
+
+    ETCD[etcd SHARD_MAP] --> HR
+
+    API --> S3[S3 avatars]
+```
+
+Каждый history shard является отдельной PostgreSQL shard-group:
+
+```text
+primary + synchronous hot standby
+```
+
+## 6.3. Схема идентификаторов
+
+Для распределённых сущностей используется `uint64`.
+
+Пример Snowflake-подобного разбиения:
+
+```text
+1 bit   — reserved
+41 bits — timestamp
+10 bits — worker_id
+12 bits — sequence
+```
+
+Каждый генератор получает уникальный `worker_id` через etcd.
+
+Таким образом, создание ID не требует центрального sequence.
+
+## 6.4. Шардирование архива партий
+
+### Причина шардирования
+
+Из раздела 2:
+
+```text
+GAME     ≈ 69,45 ТБ
+ANALYSIS ≈ 75,00 ТБ
+
+Итого    ≈ 144,45 ТБ
+```
+
+Такой объём не размещается на одном сервере с необходимым запасом под индексы и рост.
+
+Для проекта принимается `32` физических shard-group.
+
+Средний логический объём на primary shard:
+
+```text
+144,45 ТБ / 32 ≈ 4,51 ТБ
+```
+
+При целевом заполнении диска не более `70 %`:
+
+```text
+4,51 / 0,70 ≈ 6,45 ТБ
+```
+
+Поэтому для одного primary shard требуется не менее `8 ТБ` дискового пространства до учёта дальнейшего роста.
+
+Шардирование в текущем масштабе определяется **объёмом данных**, а не write-QPS.
+
+Пиковая запись партий на один shard при равномерном распределении:
+
+```text
+380 / 32 ≈ 11,9 game inserts/с
+```
+
+### Привязка `game_id` к шарду
+
+Не используется:
+
+```text
+shard = game_id % 32
+```
+
+поскольку при изменении числа shard-group такая схема потребовала бы массового перераспределения данных.
+
+Вводятся `4096` виртуальных bucket:
+
+```text
+bucket_id = hash64(game_id) mod 4096
+```
+
+Физическое размещение задаётся таблицей конфигурации:
+
+```text
+SHARD_MAP[bucket_id] -> shard_id
+```
+
+При 32 shard-group изначально:
+
+```text
+4096 / 32 = 128 bucket на shard
+```
+
+Маршрут чтения:
+
+```text
+game_id
+   ↓ hash
+bucket_id
+   ↓ SHARD_MAP
+physical shard
+```
+
+`SHARD_MAP` хранится в etcd и кешируется в приложениях.
+
+При добавлении нового shard переносятся отдельные виртуальные bucket, а не пересчитывается размещение всех игр.
+
+### Совместное размещение GAME и ANALYSIS
+
+`GAME` и `ANALYSIS` используют одинаковый `game_id` и одинаковый `bucket_id`.
+
+Следовательно:
+
+```text
+GAME(game_id) и ANALYSIS(game_id)
+→ один physical shard
+```
+
+Это исключает межшардовый запрос при получении партии вместе с её анализом.
+
+## 6.5. Денормализация истории
+
+Если хранить только:
+
+```text
+GAME.white_user_id
+GAME.black_user_id
+```
+
+то запрос истории конкретного пользователя потребует scatter-gather по всем 32 game shards.
+
+Поэтому создаётся физическая денормализованная таблица:
+
+```text
+USER_GAME_HISTORY
+```
+
+Структура:
+
+```text
+user_id
+ended_at
+game_id
+game_bucket
+opponent_user_id
+game_type
+time_control
+result
+rating_before
+rating_after
+```
+
+На одну завершённую партию создаётся две записи:
+
+```text
+white player history row
+black player history row
+```
+
+Средняя write-нагрузка:
+
+```text
+356 × 2 ≈ 712 inserts/с
+```
+
+Таблица шардируется независимо:
+
+```text
+history_bucket = hash64(user_id) mod 4096
+```
+
+Поэтому вся история конкретного пользователя маршрутизируется без обхода всех game shards.
+
+Поле `game_bucket` позволяет при необходимости сразу найти shard с полной записью `GAME`.
+
+## 6.6. Таблицы и индексы PostgreSQL
+
+### Account cluster
+
+#### USER
+
+```text
+PK (user_id)
+UNIQUE (username)
+INDEX (country)
+```
+
+`avatar` хранит только object key.
+
+#### RATING
+
+```text
+PK (user_id, rating_type)
+```
+
+Обновление рейтингов двух игроков выполняется транзакционно внутри account cluster.
+
+#### FAIR_PLAY_REPORT
+
+```text
+PK (report_id)
+INDEX (game_id)
+INDEX (reporter_user_id, created_at DESC)
+INDEX (status, created_at)
+```
+
+### History shards
+
+#### GAME
+
+```text
+PK (game_id)
+INDEX (ended_at)
+```
+
+Внутри каждого shard таблица дополнительно partitioned по `ended_at`, например по месяцам. Это уменьшает размер локальных индексов и упрощает обслуживание больших объёмов.
+
+#### ANALYSIS
+
+```text
+PK (game_id)
+```
+
+Отдельный secondary index не требуется: основной сценарий чтения — точный запрос по `game_id`.
+
+#### USER_GAME_HISTORY
+
+```text
+PK (user_id, ended_at, game_id)
+
+INDEX (user_id, opponent_user_id, ended_at DESC)
+INDEX (user_id, game_type, time_control, ended_at DESC)
+```
+
+Таблица содержит поля, необходимые для страницы истории, чтобы обычный запрос истории не требовал чтения полной `GAME`.
+
+## 6.7. Redis
+
+### MATCHMAKING_QUEUE
+
+Логически очереди разделяются по:
+
+```text
+game_type
+time_control
+rating_bucket
+```
+
+Пример ключа:
+
+```text
+mm:blitz:3+2:rating_1400
+```
+
+Для поиска используются sorted set / hash структуры.
+
+Данные имеют TTL и не требуют долговременного backup.
+
+### ACTIVE_GAME_STATE
+
+Ключ:
+
+```text
+game:{game_id}
+```
+
+Значение:
+
+```text
+region
+board_snapshot
+snapshot_sequence
+move_log_prefix
+recent_moves
+white_time_ms
+black_time_ms
+turn
+```
+
+Один checkpoint записывается примерно раз в 10 полуходов.
+
+Все данные одной партии должны попадать в один Redis hash slot.
+
+### GAME_SERVER
+
+Ключ:
+
+```text
+gameserver:{server_id}
+```
+
+Поля:
+
+```text
+region
+endpoint
+healthy
+active_games
+capacity
+last_heartbeat
+```
+
+Heartbeat обновляет TTL записи. Истёкший TTL означает, что сервер нельзя выбирать для новой партии.
+
+## 6.8. Kafka
+
+Используются два основных topic:
+
+```text
+game.finished
+analysis.tasks
+```
+
+Partition key:
+
+```text
+game_id
+```
+
+Это даёт:
+
+- сохранение порядка событий одной партии;
+- равномерное распределение разных партий;
+- возможность горизонтально масштабировать consumer group.
+
+Для топиков используется replication factor `3`.
+
+Consumers работают в режиме at-least-once. Поэтому:
+
+```text
+GAME insert
+ANALYSIS insert
+rating processing
+```
+
+должны быть идемпотентны по `game_id`.
+
+## 6.9. Репликация
+
+| Система | Резервирование |
+| --- | --- |
+| Account PostgreSQL | primary + synchronous standby |
+| Каждый history shard | primary + synchronous hot standby |
+| Redis Cluster | replica для каждого master |
+| Kafka | replication factor 3 |
+| etcd | нечётное число узлов, quorum |
+| S3 | репликация средствами object storage |
+
+Для history shards при 32 primary shard-group:
+
+```text
+32 primary + 32 standby = 64 DB nodes
+```
+
+Это количество определяется прежде всего размером архива.
+
+## 6.10. Балансировка и мультиплексирование подключений
+
+### PostgreSQL
+
+Сервисы не открывают новое DB-соединение на каждый HTTP-запрос.
+
+Перед PostgreSQL используется PgBouncer:
+
+```text
+application
+    ↓
+PgBouncer
+    ↓
+PostgreSQL
+```
+
+Для account cluster используется один write endpoint.
+
+Для history cluster приложение сначала вычисляет `bucket_id`, затем shard router выбирает endpoint нужного shard.
+
+### Redis
+
+Используется Redis Cluster-aware client. Клиент маршрутизирует запрос в узел, владеющий нужным hash slot.
+
+### Kafka
+
+Producer определяет partition по `game_id`. Consumer group распределяет partitions между обработчиками.
+
+## 6.11. Клиентские интеграции
+
+| Система | Интеграция |
+| --- | --- |
+| PostgreSQL | PostgreSQL driver + connection pool / PgBouncer |
+| Redis | Redis Cluster client |
+| Kafka | Kafka producer/consumer client |
+| etcd | etcd client + watch для обновления `SHARD_MAP` |
+| S3 | S3 API |
+
+Конкретная библиотека зависит от языка реализации backend и фиксируется в разделе технологий.
+
+## 6.12. Резервное копирование
+
+### PostgreSQL
+
+Для account cluster и каждого history shard:
+
+- периодический full/base backup;
+- непрерывная архивация WAL;
+- Point-in-Time Recovery;
+- backup хранится отдельно от primary/standby.
+
+Наличие standby не заменяет backup: реплика повторит ошибочное удаление или повреждение данных.
+
+### Redis
+
+`MATCHMAKING_QUEUE` является временной и отдельного долговременного backup не требует.
+
+Для `ACTIVE_GAME_STATE` используются Redis replicas и AOF. Эти данные нужны только для незавершённых партий.
+
+### Kafka
+
+Основной механизм надёжности — replication factor 3 и retention, достаточный для повторного проигрывания необработанных `game.finished`.
+
+### etcd
+
+Периодически сохраняется snapshot конфигурации `SHARD_MAP`.
+
+### Аватары
+
+Object storage использует versioning/replication. В PostgreSQL хранится только object key.
+
+## 6.13. Итоговая таблица физического размещения
+
+| Логические данные | Физическое хранение | Ключ распределения | Consistency |
+| --- | --- | --- | --- |
+| `USER` | PostgreSQL account cluster | не шардируется на текущем масштабе | strong |
+| `RATING` | PostgreSQL account cluster | `user_id` | strong |
+| `FAIR_PLAY_REPORT` | PostgreSQL account cluster | `report_id` | strong на запись |
+| `GAME` | 32 PostgreSQL shard-group | `hash(game_id) -> bucket -> shard` | strong внутри shard |
+| `ANALYSIS` | тот же shard, что `GAME` | `game_id` | eventual относительно завершения партии |
+| `USER_GAME_HISTORY` | history shards, денормализовано | `hash(user_id)` | eventual относительно `GAME` |
+| `MATCHMAKING_QUEUE` | Redis Cluster | matchmaking key | ephemeral |
+| `ACTIVE_GAME_STATE` | Redis Cluster | `game_id` | checkpoint consistency |
+| `GAME_SERVER` | Redis Cluster | `server_id` / region | heartbeat + TTL |
+| `game.finished` | Kafka | `game_id` | at-least-once |
+| `analysis.tasks` | Kafka | `game_id` | at-least-once |
+| `SHARD_MAP` | etcd | `bucket_id` | quorum |
+| Avatar | S3-compatible storage | `user_id` / object key | object-store consistency |
 
 ---
 
