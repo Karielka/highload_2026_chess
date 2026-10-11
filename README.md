@@ -807,156 +807,228 @@ H — интервал heartbeat в секундах.
 
 # 6. Физическая схема базы данных
 
-Нагрузка проекта делится на несколько классов:
+В проекте используются два класса постоянного хранения:
 
-- `USER`, `RATING`, `FAIR_PLAY_REPORT` - OLTP;
-- `GAME`, `ANALYSIS` - большой постоянный архив;
-- `MATCHMAKING_QUEUE`, `GAME_STATE`, `GAME_MOVE`, `GAME_SERVER` - горячие временные данные;
-- `GAME_FINISHED_STREAM`, `ANALYSIS_TASK_STREAM` - потоковые данные;
-- аватары - файловые данные.
+- **OLTP-хранилище** — для данных, к которым нужен быстрый доступ и частые точечные чтения/изменения;
+- **OLAP-хранилище** — для большого архива завершённых партий и исторических запросов.
+
+Такое разделение позволяет не держать все `30+ млрд` партий в дорогом быстром OLTP-хранилище.
+
+Для проектируемой системы принимается следующая политика:
+
+```text
+последние 30 суток -> PostgreSQL
+вся история        -> ClickHouse
+```
+
+ClickHouse получает завершённые партии асинхронно сразу после их появления, поэтому перенос партии в архив не требует отдельной тяжёлой миграции через месяц.
+
+После истечения 30 суток данные удаляются из PostgreSQL только после того, как подтверждено их наличие в ClickHouse.
+
+Если у пользователя за последние 30 суток меньше 20 партий, API получает недостающие строки истории из ClickHouse. Таким образом, интерфейс всегда может показать последние 20 партий, но полная запись старой партии не обязана находиться в PostgreSQL.
+
+---
 
 ## 6.1. Выбор систем хранения
 
-| Данные | Система | Причина |
+| Данные | Система хранения | Обоснование |
 | --- | --- | --- |
-| `USER`, `RATING`, `FAIR_PLAY_REPORT` | PostgreSQL | транзакционная OLTP-нагрузка, индексы |
-| `GAME`, `ANALYSIS`, `USER_GAME_HISTORY` | шардированный PostgreSQL | большой объём, небольшой write-QPS, точный lookup |
-| `MATCHMAKING_QUEUE` | Redis Cluster | короткоживущие данные, низкая задержка, TTL |
-| `GAME_STATE`, `GAME_MOVE` | Redis Cluster + replicas + AOF | высокая write-нагрузка и низкая задержка; состояние вынесено из памяти game-server |
-| `GAME_SERVER` | Redis Cluster | heartbeat, TTL, быстрое чтение health/load |
-| `GAME_FINISHED_STREAM`, `ANALYSIS_TASK_STREAM` | Kafka | долговечный streaming buffer |
-| `SHARD_MAP`, выдача `worker_id` | etcd | критичная конфигурация, quorum |
-| Аватары | S3-compatible object storage | бинарные файлы |
+| `USER`, `RATING`, `FAIR_PLAY_REPORT` | PostgreSQL | транзакционные данные, точечные чтения и изменения |
+| `GAME` за последние 30 суток | шардированный PostgreSQL | быстрый доступ к недавно сыгранным партиям |
+| `ANALYSIS` за последние 30 суток | тот же шардированный PostgreSQL | анализ часто запрашивается сразу после завершения партии |
+| история пользователя за последние 30 суток | PostgreSQL | первая страница истории должна возвращаться с минимальной задержкой |
+| полный архив `GAME` | ClickHouse | большой объём, преимущественно чтение и фильтрация |
+| полный архив `ANALYSIS` | ClickHouse | исторические данные почти не изменяются |
+| полная история пользователя | ClickHouse | удобна для фильтрации по периоду, сопернику и типу партии |
+| `MATCHMAKING_QUEUE` | Redis Cluster | короткоживущие данные и низкая задержка |
+| `GAME_STATE`, `GAME_MOVE` | региональный Redis Cluster | горячее состояние активных партий |
+| `GAME_SERVER` | Redis Cluster | состояние игровых серверов, heartbeat и TTL |
+| `game.finished`, `analysis.tasks`, `analysis.finished` | Kafka | надёжная асинхронная передача событий |
+| аватары | MinIO | объектное S3-совместимое хранилище |
+| резервные копии PostgreSQL и ClickHouse | MinIO | объектное хранение больших резервных копий |
 
-`USER_GAME_HISTORY` является физической денормализацией для быстрого чтения истории.
+PostgreSQL используется как реляционная OLTP-СУБД, Redis - как in-memory хранилище, ClickHouse - как аналитическая колоночная СУБД, Kafka - как потоковая система.
 
-## 6.2. Физическая схема
+---
+
+## 6.2. Общая физическая схема и путь данных
 
 ```mermaid
 flowchart TD
-    API[API Virginia] --> ACCOUNT[PostgreSQL account cluster]
-    API --> HR[History shard router]
+    CLIENT[Клиент]
 
-    MM[Matchmaking] --> REDISMM[Redis Cluster matchmaking]
-    MM --> REDISSRV[Redis Cluster game-server registry]
+    CLIENT --> API[API Virginia]
+    API --> ACC[PostgreSQL\nUSER / RATING / FAIR_PLAY]
+    API --> HOT_ROUTER[Маршрутизатор горячей истории]
+    API --> CH[ClickHouse\nполный архив]
 
-    GS[Regional game servers] --> REDISGAME[Regional Redis Cluster GAME_STATE + GAME_MOVE]
-    GS --> KAFKA[Kafka game.finished]
+    API --> MM[Matchmaking]
+    MM --> MM_REDIS[Redis Cluster\nMATCHMAKING_QUEUE]
+    MM --> SERVER_REGISTRY[Redis Cluster\nGAME_SERVER]
 
-    KAFKA --> CONSUMER[Virginia consumer]
-    CONSUMER --> HR
-    CONSUMER --> KAFKA2[Kafka analysis.tasks]
+    MM --> REGION[Выбранный игровой регион]
 
-    KAFKA2 --> STOCKFISH[Stockfish workers]
-    STOCKFISH --> HR
+    REGION --> LB[L7 балансировщик]
+    LB --> GS[Game server]
 
-    HR --> S0[History shard 0]
-    HR --> S1[History shard 1]
-    HR --> SD[...]
-    HR --> S31[History shard 31]
+    GS --> GAME_REDIS[Regional Redis Cluster\nGAME_STATE + GAME_MOVE]
 
-    ETCD[etcd SHARD_MAP] --> HR
-    API --> S3[S3 avatars]
+    GS --> FINISHED[Kafka\ngame.finished]
+
+    FINISHED --> GAME_WRITER[Запись завершённой партии]
+    GAME_WRITER --> HOT_ROUTER
+    GAME_WRITER --> CH
+
+    FINISHED --> RATING_WORKER[Пересчёт рейтинга]
+    RATING_WORKER --> ACC
+
+    FINISHED --> ANALYSIS_QUEUE[Kafka\nanalysis.tasks]
+    ANALYSIS_QUEUE --> STOCKFISH[Stockfish workers]
+    STOCKFISH --> ANALYSIS_FINISHED[Kafka\nanalysis.finished]
+
+    ANALYSIS_FINISHED --> ANALYSIS_WRITER[Запись результата анализа]
+    ANALYSIS_WRITER --> HOT_ROUTER
+    ANALYSIS_WRITER --> CH
+
+    HOT_ROUTER --> P0[PostgreSQL shard 0]
+    HOT_ROUTER --> P1[PostgreSQL shard 1]
+    HOT_ROUTER --> PX[...]
+    HOT_ROUTER --> P7[PostgreSQL shard 7]
+
+    API --> MINIO[MinIO\nаватары]
+    ACC -. backup .-> MINIO
+    P0 -. backup .-> MINIO
+    P1 -. backup .-> MINIO
+    P7 -. backup .-> MINIO
+    CH -. backup / cold data .-> MINIO
 ```
 
-`GAME_STATE` и `GAME_MOVE` размещаются в игровом регионе партии, чтобы запись каждого хода не уходила в Virginia.
+---
 
-## 6.3. Схема идентификаторов
+## 6.3. Горячее и архивное хранение партий
 
-Для распределённых сущностей используется `uint64`.
+Средний прирост основных данных:
 
 ```text
-1 bit   — reserved
-41 bits — timestamp
-10 bits — worker_id
-12 bits — sequence
+GAME     ≈ 71,2 ГБ/сутки
+ANALYSIS ≈ 76,9 ГБ/сутки
+
+Итого    ≈ 148,1 ГБ/сутки
 ```
 
-`worker_id` выдаётся через etcd. Центральный SQL sequence не требуется.
-
-## 6.4. Шардирование архива партий
+За 30 суток:
 
 ```text
-GAME     ≈ 69,45 ТБ
-ANALYSIS ≈ 75,00 ТБ
-Итого    ≈144,45 ТБ
+148,1 × 30 ≈ 4,44 ТБ
 ```
 
-Принимается `32` PostgreSQL shard-group:
+Следовательно, в PostgreSQL не требуется хранить весь архив объёмом `≈144,45 ТБ`.
+
+В нём находится только горячий набор данных порядка:
 
 ```text
-144,45 ТБ / 32 ≈ 4,51 ТБ на primary shard
+≈4,44 ТБ + индексы + служебные данные
 ```
 
-При заполнении не более `70 %`:
+Все завершённые партии одновременно записываются в ClickHouse.
+
+Через 30 суток соответствующие временные разделы PostgreSQL удаляются.
+
+Используется не построчное удаление миллионов записей, а удаление временного раздела таблицы.
+
+---
+
+## 6.4. Шардирование PostgreSQL
+
+Для горячего хранилища принимается `8` групп PostgreSQL.
+
+При равномерном распределении:
 
 ```text
-4,51 / 0,70 ≈ 6,45 ТБ
+4,44 ТБ / 8 ≈ 0,56 ТБ логических данных на шард
 ```
 
-Поэтому требуется не менее `8 ТБ` на primary shard до учёта дальнейшего роста.
+Даже с индексами и запасом это значительно проще размещать на сервере, чем весь архив.
 
-Пиковая запись:
+Каждая группа состоит из:
 
 ```text
-380 / 32 ≈ 11,9 inserts/с на shard
+1 primary
+1 synchronous standby
 ```
 
-Шардирование определяется прежде всего объёмом данных.
-
-### Привязка game к shard
-
-Используются `4096` виртуальных bucket:
+Итого для горячего хранилища:
 
 ```text
-bucket_id = hash64(game_id) mod 4096
-SHARD_MAP[bucket_id] -> shard_id
+8 primary + 8 standby
 ```
 
-При `32` shard-group:
+### Виртуальные сегменты
+
+Прямое правило вида:
 
 ```text
-4096 / 32 = 128 bucket на shard
+shard = game_id % 8
 ```
 
-Прямой `game_id % 32` не используется, поскольку изменение количества физических shard потребовало бы массового перераспределения данных.
+не используется.
 
-`SHARD_MAP` хранится в etcd и кешируется shard-router.
+Если число физических шардов изменится, такое правило изменит размещение большой части данных.
 
-`GAME` и `ANALYSIS` одного `game_id` всегда размещаются на одном физическом shard.
-
-## 6.5. Денормализация истории
-
-Чтобы история пользователя не делала scatter-gather по всем game-shard, создаётся `USER_GAME_HISTORY`:
+Используется промежуточный уровень из `1024` виртуальных сегментов:
 
 ```text
-user_id
-ended_at
-game_id
-game_bucket
-opponent_user_id
-game_type
-time_control
-result
-rating_before
-rating_after
+bucket_id = hash64(game_id) mod 1024
 ```
 
-На одну завершённую партию создаются две строки:
+Далее:
 
 ```text
-356 × 2 ≈ 712 inserts/с
+bucket_id -> physical_shard
 ```
 
-Шардирование:
+При 8 физических шардах:
 
 ```text
-history_bucket = hash64(user_id) mod 4096
+1024 / 8 = 128 виртуальных сегментов на шард
 ```
 
-Поле `game_bucket` позволяет определить shard полной записи `GAME`.
+Почему именно `1024`:
 
-## 6.6. Таблицы и индексы PostgreSQL
+- это значительно больше числа физических шардов;
+- один сегмент составляет только `1 / 1024 ≈ 0,098 %` пространства ключей;
+- при добавлении сервера можно переносить небольшие части данных;
+- таблица соответствия содержит всего 1024 записи;
+- даже при росте до 32 физических шардов останется по 32 виртуальных сегмента на каждый.
+
+Предыдущее значение `4096` не давало заметного выигрыша для текущего масштаба и усложняло описание, поэтому используется `1024`.
+
+### Где хранится таблица соответствия
+
+Отдельный кластер etcd для этой задачи не используется.
+
+Таблица:
+
+```text
+SHARD_MAP
+```
+
+хранится в PostgreSQL account cluster:
+
+```text
+bucket_id
+shard_id
+version
+status
+```
+
+Маршрутизатор кеширует её в памяти и обновляет только при изменении конфигурации.
+
+Изменение распределения шардов происходит редко, поэтому отдельная координационная система для `1024` записей здесь избыточна.
+
+---
+
+## 6.6. Горячие таблицы PostgreSQL
 
 ### USER
 
@@ -965,6 +1037,8 @@ PK (user_id)
 UNIQUE (username)
 INDEX (country)
 ```
+
+`avatar` содержит только ключ объекта в MinIO.
 
 ### RATING
 
@@ -981,189 +1055,512 @@ INDEX (reporter_user_id, created_at DESC)
 INDEX (status, created_at)
 ```
 
-### GAME
+### GAME_HOT
 
 ```text
 PK (game_id)
 INDEX (ended_at)
 ```
 
-Внутри каждого shard `GAME` дополнительно partitioned по `ended_at`, например по месяцам.
+Таблица дополнительно разбивается по времени завершения партии.
 
-### ANALYSIS
+Например:
+
+```text
+один раздел = один день
+```
+
+Это позволяет удалять партии старше 30 суток целыми разделами.
+
+### ANALYSIS_HOT
 
 ```text
 PK (game_id)
 ```
 
-### USER_GAME_HISTORY
+Хранится на том же физическом шарде, что и `GAME_HOT`.
+
+### USER_GAME_HISTORY_HOT
 
 ```text
-PK (user_id, ended_at, game_id)
-INDEX (user_id, opponent_user_id, ended_at DESC)
-INDEX (user_id, game_type, time_control, ended_at DESC)
+user_id
+ended_at
+game_id
+opponent_user_id
+game_type
+time_control
+result
+rating_before
+rating_after
 ```
 
-## 6.7. Redis: GAME_STATE и GAME_MOVE
+Индексы:
 
-Ключи одной партии должны находиться в одном Redis hash slot:
+```text
+(user_id, ended_at DESC)
+(user_id, opponent_user_id, ended_at DESC)
+(user_id, game_type, time_control, ended_at DESC)
+```
+
+На одну партию создаются две записи: для белых и для чёрных.
+
+```text
+356 партий/с × 2 ≈ 712 inserts/с
+```
+
+---
+
+## 6.7. Архив в ClickHouse
+
+ClickHouse используется для хранения данных, которые после завершения партии практически не изменяются.
+
+Используются три основные таблицы.
+
+### GAME_ARCHIVE
+
+Одна строка на одну завершённую партию.
+
+```text
+game_id
+white_user_id
+black_user_id
+game_type
+time_control
+result
+termination_reason
+started_at
+ended_at
+pgn
+```
+
+Рекомендуемая организация:
+
+```text
+PARTITION BY toYYYYMM(ended_at)
+ORDER BY game_id
+```
+
+### ANALYSIS_ARCHIVE
+
+```text
+game_id
+created_at
+positions
+```
+
+Основной поиск выполняется по `game_id`.
+
+### USER_GAME_HISTORY_ARCHIVE
+
+На одну партию создаются две строки.
+
+```text
+user_id
+ended_at
+game_id
+opponent_user_id
+game_type
+time_control
+result
+rating_before
+rating_after
+```
+
+Организация данных:
+
+```text
+PARTITION BY toYYYYMM(ended_at)
+ORDER BY (user_id, ended_at, game_id)
+```
+
+Такой порядок подходит под запрос:
+
+```text
+история пользователя
++ период
++ соперник
++ тип партии
+```
+
+ClickHouse хорошо подходит для этой части системы, потому что архив:
+
+- очень большой;
+- в основном дописывается;
+- почти не изменяется;
+- читается по большим историческим диапазонам;
+- используется для фильтрации и аналитики.
+
+---
+
+## 6.8. Получение истории пользователем
+
+Первая страница содержит до 20 партий.
+
+Алгоритм:
+
+```text
+1. API читает USER_GAME_HISTORY_HOT из PostgreSQL.
+2. Если получено 20 строк -> ответ пользователю.
+3. Если строк меньше 20 -> недостающая часть читается из ClickHouse.
+```
+
+Например:
+
+```text
+PostgreSQL вернул 13 партий
+ClickHouse возвращает ещё 7
+```
+
+При просмотре более старых страниц запрос сразу направляется в ClickHouse.
+
+Таким образом, PostgreSQL обслуживает наиболее частый сценарий, а большой исторический архив не занимает быстрое OLTP-хранилище.
+
+---
+
+## 6.9. Активная партия в Redis
+
+Для каждой партии используются два ключа:
 
 ```text
 game:{game_id}:state
 game:{game_id}:moves
 ```
 
-### GAME_STATE
-
-Хранит последний подтверждённый snapshot и `pgn_prefix`.
+Одинаковая часть `{game_id}` гарантирует попадание обоих ключей в один сегмент Redis Cluster.
 
 ### GAME_MOVE
 
-Хранит упорядоченный хвост ходов после `snapshot_sequence`.
-
-Каждый подтверждённый ход сначала записывается в `GAME_MOVE`.
-
-После накопления 10 ходов game-service:
+Каждый подтверждённый ход сначала сохраняется отдельно.
 
 ```text
-1. читает GAME_STATE;
-2. читает GAME_MOVE;
-3. вычисляет новый snapshot;
-4. заменяет GAME_STATE;
-5. удаляет только ходы, уже включённые в snapshot.
+sequence
+player_user_id
+from_square
+to_square
+promotion
+clock_after_ms
+created_at
 ```
 
-Шаги 4–5 выполняются только если `snapshot_sequence` совпадает с ожидаемым значением. Это защищает от удаления ещё не сохранённых ходов.
+### GAME_STATE
 
-Game-server может иметь локальный кеш вычисленной позиции, но он не является источником истины. После отказа позиция восстанавливается из Redis.
-
-Для Redis включаются:
+Хранит последний подтверждённый снимок:
 
 ```text
-replica для каждого master
-AOF persistence
+board_snapshot
+snapshot_sequence
+pgn_prefix
+white_time_ms
+black_time_ms
+turn
 ```
 
-## 6.8. Redis: matchmaking и GAME_SERVER
-
-`MATCHMAKING_QUEUE` разделяется по:
+После накопления 10 ходов:
 
 ```text
-game_type
-time_control
-rating_bucket
+GAME_STATE + GAME_MOVE
+        ↓
+новый GAME_STATE
+        ↓
+удаление уже перенесённых GAME_MOVE
 ```
 
-`GAME_SERVER` хранится как:
+Актуальное состояние:
+
+```text
+GAME_STATE + оставшиеся GAME_MOVE
+```
+
+Поэтому отказ игрового процесса не приводит к потере состояния партии.
+
+---
+
+## 6.10. Что такое AOF и зачем он используется
+
+**AOF — Append Only File**, журнал изменений Redis.
+
+Redis последовательно записывает в него команды, изменяющие данные.
+
+После перезапуска Redis может прочитать журнал и восстановить состояние.
+
+Для `GAME_STATE` и `GAME_MOVE` AOF нужен потому, что эти данные нельзя считать обычным кешем: они необходимы для восстановления незавершённой партии.
+
+Используется:
+
+```text
+Redis replication
++
+AOF
+```
+
+AOF не заменяет репликацию и резервное копирование.
+
+При политике:
+
+```text
+appendfsync everysec
+```
+
+Redis синхронизирует журнал с диском примерно раз в секунду. Это быстрее записи на диск после каждой команды, но теоретически допускает потерю последних изменений при аварии всего узла.
+
+Поэтому игровой протокол также использует:
+
+```text
+game_id + sequence
+```
+
+и после переподключения клиент и сервер сверяют последний подтверждённый номер хода.
+
+---
+
+## 6.11. GAME_SERVER и matchmaking
+
+Реестр игровых серверов хранится в Redis:
 
 ```text
 gameserver:{server_id}
 ```
 
-Heartbeat обновляет `healthy`, `active_games`, `last_heartbeat` и TTL.
+Поля:
 
-Matchmaking использует registry для выбора региона. L7 выбирает конкретный healthy backend внутри региона.
+```text
+region
+endpoint
+healthy
+active_games
+capacity
+last_heartbeat
+```
 
-## 6.9. Kafka
+Heartbeat обновляет запись и срок жизни.
 
-Topics:
+Если heartbeat перестал приходить, запись истекает, и сервер перестаёт считаться доступным.
+
+Matchmaking использует этот реестр для оценки загрузки игрового региона.
+
+Конкретный game-server внутри выбранного региона выбирается L7-балансировщиком по `game_id`.
+
+---
+
+## 6.12. Kafka
+
+Используются три потока:
 
 ```text
 game.finished
 analysis.tasks
+analysis.finished
 ```
 
-Partition key:
+### game.finished
+
+Создаётся игровым сервером после завершения партии.
+
+Потребители:
+
+```text
+PostgreSQL hot writer
+ClickHouse archive writer
+rating worker
+analysis task producer
+```
+
+### analysis.tasks
+
+Содержит задания для Stockfish.
+
+### analysis.finished
+
+Содержит готовый результат анализа.
+
+Потребители:
+
+```text
+PostgreSQL hot writer
+ClickHouse archive writer
+```
+
+Ключ распределения:
 
 ```text
 game_id
 ```
 
-Replication factor:
+Для Kafka используется replication factor `3`.
+
+Повторная доставка допустима, поэтому операции записи должны быть идемпотентны по `game_id`.
+
+---
+
+## 6.13. MinIO
+
+В качестве S3-совместимого объектного хранилища используется **MinIO**.
+
+MinIO применяется для:
 
 ```text
-3
+аватаров пользователей
+резервных копий PostgreSQL
+резервных копий ClickHouse
+долговременных объектов
 ```
 
-Consumers работают at-least-once, поэтому обработчики идемпотентны по `game_id`.
+Кроме того, ClickHouse может использовать S3-совместимое хранилище как холодный уровень хранения.
 
-## 6.10. Репликация
+Для архивных таблиц возможно правило:
 
-| Система | Резервирование |
+```text
+данные до 30 суток     -> локальные диски ClickHouse
+данные старше 30 суток -> MinIO
+```
+
+При этом запрос продолжает выполняться через ClickHouse, а приложение не работает с архивными файлами напрямую.
+
+Такой вариант позволяет отделить вычислительные узлы ClickHouse от большого объёма объектного хранения.
+
+---
+
+## 6.14. Репликация
+
+| Система | Схема |
 | --- | --- |
 | Account PostgreSQL | primary + synchronous standby |
-| Каждый history shard | primary + synchronous hot standby |
-| Regional Redis Cluster | replica для каждого master + AOF |
+| Каждый горячий PostgreSQL shard | primary + synchronous standby |
+| Redis Cluster активных игр | master + replica |
+| Redis matchmaking/server registry | master + replica |
+| ClickHouse | минимум 2 реплики на шард |
 | Kafka | replication factor 3 |
-| etcd | нечётное число узлов, quorum |
-| S3 | репликация средствами object storage |
+| MinIO | распределённое хранение с избыточностью средствами MinIO |
 
-Для `32` history primary shard:
-
-```text
-32 primary + 32 standby = 64 DB nodes
-```
-
-## 6.11. Балансировка подключений
-
-Для PostgreSQL используется PgBouncer.
-
-Для history archive shard-router вычисляет:
+Для горячего PostgreSQL:
 
 ```text
-game_id -> bucket_id -> SHARD_MAP -> shard
+8 primary + 8 standby
 ```
 
-Для Redis используется Cluster-aware client.
+---
 
-Для Kafka producer выбирает partition по `game_id`, а consumer group распределяет partitions между обработчиками.
+## 6.15. Балансировка подключений
 
-## 6.12. Резервное копирование
+### PostgreSQL
 
-PostgreSQL:
+Перед PostgreSQL используется PgBouncer.
 
-- base backup;
-- WAL archive;
-- Point-in-Time Recovery;
-- backup отдельно от primary и standby.
+```text
+application
+    ↓
+PgBouncer
+    ↓
+PostgreSQL
+```
 
-Redis:
+Маршрут партии:
 
-- replicas;
-- AOF для `GAME_STATE` и `GAME_MOVE`;
-- после переноса партии в `GAME` временные данные удаляются.
+```text
+game_id
+  ↓
+hash64(game_id) mod 1024
+  ↓
+SHARD_MAP
+  ↓
+PostgreSQL shard
+```
 
-Kafka:
+### ClickHouse
 
-- replication factor 3;
-- retention для повторной обработки `game.finished`.
+Приложение обращается к распределённым таблицам ClickHouse.
 
-etcd:
+Для:
 
-- snapshot `SHARD_MAP`.
+```text
+GAME_ARCHIVE
+ANALYSIS_ARCHIVE
+```
 
-Аватары:
+данные распределяются по `game_id`.
 
-- versioning/replication object storage.
+Для:
 
-## 6.13. Итоговая таблица физического размещения
+```text
+USER_GAME_HISTORY_ARCHIVE
+```
 
-| Логические данные | Физическое хранение | Ключ распределения | Consistency |
+данные распределяются по `user_id`, чтобы история одного пользователя читалась с ограниченного набора узлов.
+
+### Redis
+
+Используется клиент с поддержкой Redis Cluster.
+
+### Kafka
+
+Producer выбирает partition по `game_id`, consumer group распределяет partitions между обработчиками.
+
+---
+
+## 6.16. Резервное копирование
+
+### PostgreSQL
+
+Используются:
+
+```text
+base backup
+WAL archive
+Point-in-Time Recovery
+```
+
+Резервные копии выгружаются в MinIO.
+
+### ClickHouse
+
+Архивные данные реплицируются между узлами.
+
+Резервные копии метаданных и критичных таблиц сохраняются в MinIO.
+
+Если для старых разделов ClickHouse используется MinIO как холодный уровень хранения, это не отменяет резервирование: холодное хранилище и резервная копия являются разными задачами.
+
+### Redis
+
+Для `GAME_STATE` и `GAME_MOVE`:
+
+```text
+replica + AOF
+```
+
+Долговременная резервная копия не требуется, поскольку после завершения партии данные переносятся в `GAME`.
+
+### Kafka
+
+Используется replication factor 3 и достаточный срок хранения сообщений для повторной обработки.
+
+### MinIO
+
+Используется распределённая конфигурация MinIO с избыточностью данных.
+
+---
+
+## 6.17. Итоговая схема размещения
+
+| Данные | Основное хранилище | Срок хранения | Ключ распределения |
 | --- | --- | --- | --- |
-| `USER` | PostgreSQL account cluster | не шардируется | strong |
-| `RATING` | PostgreSQL account cluster | `user_id` | strong |
-| `FAIR_PLAY_REPORT` | PostgreSQL account cluster | `report_id` | strong на запись |
-| `GAME` | 32 PostgreSQL shard-group | `hash(game_id) -> bucket -> shard` | strong внутри shard |
-| `ANALYSIS` | shard вместе с `GAME` | `game_id` | eventual относительно GAME |
-| `USER_GAME_HISTORY` | history bucket | `hash(user_id)` | eventual относительно GAME |
-| `MATCHMAKING_QUEUE` | Redis Cluster | game type / time / rating | ephemeral |
-| `GAME_STATE` | regional Redis Cluster | `{game_id}` | snapshot |
-| `GAME_MOVE` | тот же Redis slot, что `GAME_STATE` | `{game_id}` | ordered tail |
-| `GAME_SERVER` | Redis Cluster | `server_id` | heartbeat + TTL |
-| `game.finished` | Kafka | `game_id` | at-least-once |
-| `analysis.tasks` | Kafka | `game_id` | at-least-once |
-| `SHARD_MAP` | etcd | `bucket_id` | quorum |
-| Avatar | S3-compatible storage | object key | object-store consistency |
+| `USER` | PostgreSQL | постоянно | `user_id` |
+| `RATING` | PostgreSQL | постоянно | `user_id` |
+| `FAIR_PLAY_REPORT` | PostgreSQL | постоянно | `report_id` |
+| `GAME_HOT` | PostgreSQL, 8 шардов | 30 суток | `hash(game_id) -> 1024 buckets -> shard` |
+| `ANALYSIS_HOT` | тот же PostgreSQL shard | 30 суток | `game_id` |
+| `USER_GAME_HISTORY_HOT` | PostgreSQL | 30 суток | `user_id` |
+| `GAME_ARCHIVE` | ClickHouse | постоянно | `game_id` |
+| `ANALYSIS_ARCHIVE` | ClickHouse | постоянно | `game_id` |
+| `USER_GAME_HISTORY_ARCHIVE` | ClickHouse | постоянно | `user_id` |
+| `GAME_MOVE` | Redis Cluster | до завершения партии | `{game_id}` |
+| `GAME_STATE` | Redis Cluster | до завершения партии | `{game_id}` |
+| `MATCHMAKING_QUEUE` | Redis Cluster | до нахождения пары | тип / контроль / рейтинг |
+| `GAME_SERVER` | Redis Cluster | пока сервер жив | `server_id` |
+| `game.finished` | Kafka | временно | `game_id` |
+| `analysis.tasks` | Kafka | временно | `game_id` |
+| `analysis.finished` | Kafka | временно | `game_id` |
+| аватары | MinIO | постоянно | object key |
+| резервные копии | MinIO | по политике хранения | object key |
 
 ---
 
@@ -1189,3 +1586,9 @@ etcd:
 9. <a id="source9"></a>[Chess.com Help - How does matchmaking work in Live Chess?](https://support.chess.com/en/articles/8639319-how-does-matchmaking-work-in-live-chess) - матчмейкинг по рейтинговому диапазону и контролю времени.
 
 10. <a id="source10"></a>[NGINX — Testing the Performance of NGINX Ingress Controller for Kubernetes](https://blog.nginx.org/blog/testing-performance-nginx-ingress-controller-kubernetes) — тесты L7 routing и SSL termination; для 8 CPU без Hyper-Threading получено 31 485 SSL TPS.
+
+11. <a id="source11"></a>[Redis Persistence](https://redis.io/docs/latest/management/persistence/) - AOF и RDB.
+
+12. <a id="source12"></a>[ClickHouse](https://clickhouse.com/docs/) - официальный сайт и документация ClickHouse.
+
+13. <a id="source13"></a>[MinIO — S3-совместимое объектное хранилище](https://min.io/) - MinIO документация.
