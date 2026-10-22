@@ -847,7 +847,7 @@ ClickHouse получает завершённые партии асинхрон
 | аватары | MinIO | объектное S3-совместимое хранилище |
 | резервные копии PostgreSQL и ClickHouse | MinIO | объектное хранение больших резервных копий |
 | статистика активных игроков для расчёта когорт | ClickHouse | периодическая агрегация распределения рейтингов |
-| `MATCHMAKING_COHORT_CONFIG` | основной PostgreSQL | компактная конфигурация для рабочего контура matchmaking |
+| когорты для матчмейкинга | основной PostgreSQL | компактная конфигурация для рабочего контура matchmaking |
 
 PostgreSQL используется как реляционная OLTP-СУБД, Redis - как in-memory хранилище, ClickHouse - как аналитическая колоночная СУБД, Kafka - как потоковая система.
 
@@ -1089,6 +1089,31 @@ PostgreSQL
 локальный кеш matchmaking
         ↓
 Redis MATCHMAKING_QUEUE
+```
+
+Итоговая конфигурация записывается в основной PostgreSQL:
+
+```text
+MATCHMAKING_COHORT_CONFIG
+```
+
+Структура:
+
+```text
+version
+game_type
+time_control
+cohort_id
+rating_min
+rating_max
+active_players
+calculated_at
+```
+
+Первичный ключ:
+
+```text
+(version, game_type, time_control, cohort_id)
 ```
 
 ---
