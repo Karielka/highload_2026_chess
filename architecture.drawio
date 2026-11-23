@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.5.2 Chrome/142.0.7444.265 Electron/39.6.1 Safari/537.36">
   <diagram name="Схема проекта" id="oOu4mqjFqkXMs3lJ-H4F">
-    <mxGraphModel dx="2340" dy="1816" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2900" pageHeight="1940" math="0" shadow="0">
+    <mxGraphModel dx="1863" dy="1446" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2900" pageHeight="1940" math="0" shadow="0">
       <root>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-0" />
         <mxCell id="OGB9cYf404Pc4me5-RXQ-1" parent="OGB9cYf404Pc4me5-RXQ-0" />
@@ -25,7 +25,7 @@
         <mxCell id="OGB9cYf404Pc4me5-RXQ-8" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#f3f6fa;strokeColor=#8fa2b8;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:18px&quot;&gt;Игроки&lt;/b&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="90" width="120" x="18" y="324" as="geometry" />
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-9" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#eaf8f3;strokeColor=#299d8e;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;NGINX L7 × 3&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px;color:#526477&quot;&gt;TLS termination&lt;br&gt;HTTPS + WSS&lt;/span&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-9" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#eaf8f3;strokeColor=#299d8e;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;NGINX L7 × 3&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 13px; color: rgb(82, 100, 119);&quot;&gt;TLS termination&lt;br&gt;HTTPS&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="105" width="183" x="504.5" y="317" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-10" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;API Gateway&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:13px;color:#526477&quot;&gt;JWT · маршруты HTTPS&lt;/span&gt;&lt;/div&gt;" vertex="1">
@@ -55,7 +55,7 @@
         <mxCell id="OGB9cYf404Pc4me5-RXQ-19" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#fff4e9;strokeColor=#d29a5e;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Redis Cluster × 5&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;GAME_STATE · GAME_MOVE&lt;br&gt;GAME_OWNER · AOF&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="109" width="245" x="1829" y="461" as="geometry" />
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-20" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#f6effc;strokeColor=#9a75c7;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;PostgreSQL · HOT&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;8 физических шардов · 30 суток&lt;br&gt;GAME · ANALYSIS · HISTORY · OUTBOX&lt;/span&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-20" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#f6effc;strokeColor=#9a75c7;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;PostgreSQL · HOT&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;8 физических шардов · 30 суток&lt;br&gt;GAME · ANALYSIS · HISTORY&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="117" width="324" x="250" y="1600.5" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-21" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#fff8e7;strokeColor=#c1a044;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;ClickHouse · архив&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;6 шардов × 2 реплики&lt;br&gt;GAME · HISTORY · ANALYSIS&lt;/span&gt;&lt;/div&gt;" vertex="1">
@@ -64,10 +64,10 @@
         <mxCell id="OGB9cYf404Pc4me5-RXQ-22" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Cohort Worker&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;границы рейтинга&lt;br&gt;по контролю времени&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="120" width="247" x="1460" y="1600" as="geometry" />
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-23" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Persistence Worker&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;GAME_HOT&lt;br&gt;&lt;/span&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-23" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Persistence Worker&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;GAME_HOT + 2&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;×&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;USER_GAME_HISTORY_HOT&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="103" width="268" x="2020" y="1103.5" as="geometry" />
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-24" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#f5eafb;strokeColor=#9859bc;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Kafka · central (Virginia)&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;{region}.game.finished ·&amp;nbsp;&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;game.persisted&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;·&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;analysis.tasks&amp;nbsp;&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;analysis.finished&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;·&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171));&quot;&gt;analysis.persisted&lt;/span&gt;&lt;/div&gt;" vertex="1">
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-24" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#f5eafb;strokeColor=#9859bc;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Kafka · central (Virginia)&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;5&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;×&lt;/span&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;&amp;nbsp;{region}.game.finished ·&amp;nbsp;&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;game.persisted&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;·&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;analysis.tasks&amp;nbsp;&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;analysis.finished&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;·&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt; &lt;/span&gt;&lt;span style=&quot;background-color: transparent; color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171));&quot;&gt;analysis.persisted&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="108" width="283" x="2509.5" y="840" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-25" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Stockfish workers&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;80 позиций / партию&lt;br&gt;асинхронный расчёт&lt;/span&gt;&lt;/div&gt;" vertex="1">
@@ -85,8 +85,8 @@
         <mxCell id="OGB9cYf404Pc4me5-RXQ-32" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#f5eafb;strokeColor=#9859bc;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Kafka · регион&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;game.moves · checkpoints&lt;br&gt;3 broker + 3 KRaft&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="107" width="257" x="2521.5" y="257" as="geometry" />
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-33" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;MirrorMaker 2&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;game.finished: 5 region в Virginia&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;Kafka Connect, запущен в Virginia&lt;/span&gt;&lt;/div&gt;" vertex="1">
-          <mxGeometry height="100" width="244" x="2528" y="447" as="geometry" />
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-33" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;MirrorMaker 2&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;game.finished: 5&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: rgb(82, 100, 119); background-color: transparent;&quot;&gt;×&amp;nbsp;&lt;/span&gt;&lt;span style=&quot;color: light-dark(rgb(82, 100, 119), rgb(139, 155, 171)); background-color: transparent;&quot;&gt;region в Virginia&lt;/span&gt;&lt;/div&gt;&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;span style=&quot;font-size: 12px; color: rgb(82, 100, 119);&quot;&gt;Kafka Connect, запущен в Virginia&lt;/span&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="100" width="244" x="2529.5" y="653" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-37" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Analysis Dispatcher&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px;color:#526477&quot;&gt;analysis.tasks&lt;/span&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="99.5" width="200" x="2390" y="1240.5" as="geometry" />
@@ -108,9 +108,6 @@
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-43" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=15;fontColor=#168b77;" value="WSS 5 регионов" vertex="1">
           <mxGeometry height="24" width="420" x="956" as="geometry" />
-        </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-45" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=14;fontColor=#63778a;" value="Всего AWS NLB: 5 внешних + 1 внутренний" vertex="1">
-          <mxGeometry height="24" width="620" x="286" y="626" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-47" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=14;fontColor=#b57941;" value="GAME_STATE после Kafka ACK" vertex="1">
           <mxGeometry height="24" width="230" x="1740" y="400" as="geometry" />
@@ -198,20 +195,20 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-69" edge="1" parent="OGB9cYf404Pc4me5-RXQ-1" source="OGB9cYf404Pc4me5-RXQ-13" style="edgeStyle=none;orthogonalLoop=0;noEdgeStyle=1;rounded=0;html=1;strokeColor=#b57941;strokeWidth=2.4;exitX=1;exitY=0.5;exitPerimeter=0;entryX=0;entryY=0.5;entryPerimeter=0;endArrow=block;endSize=10;endFill=1;" target="OGB9cYf404Pc4me5-RXQ-16" value="">
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-69" edge="1" parent="OGB9cYf404Pc4me5-RXQ-1" source="OGB9cYf404Pc4me5-RXQ-13" style="edgeStyle=none;orthogonalLoop=0;noEdgeStyle=1;rounded=0;html=1;strokeColor=#b57941;strokeWidth=2.4;exitX=1;exitY=0.75;entryX=0;entryY=0.5;entryPerimeter=0;endArrow=block;endSize=10;endFill=1;exitDx=0;exitDy=0;" target="OGB9cYf404Pc4me5-RXQ-16" value="">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1329" y="430" />
+              <mxPoint x="1330" y="454.25" />
               <mxPoint x="1329" y="537.5" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="OGB9cYf404Pc4me5-RXQ-70" edge="1" parent="OGB9cYf404Pc4me5-RXQ-1" source="OGB9cYf404Pc4me5-RXQ-8" style="edgeStyle=none;orthogonalLoop=0;noEdgeStyle=1;rounded=0;html=1;strokeColor=#168b77;strokeWidth=2.4;exitX=0.5;exitY=0;exitPerimeter=0;endArrow=block;endSize=10;endFill=1;jumpStyle=none;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="OGB9cYf404Pc4me5-RXQ-18" value="">
-          <mxGeometry relative="1" x="-0.2163" as="geometry">
+        <mxCell id="OGB9cYf404Pc4me5-RXQ-70" edge="1" parent="OGB9cYf404Pc4me5-RXQ-1" source="OGB9cYf404Pc4me5-RXQ-8" style="edgeStyle=none;orthogonalLoop=0;noEdgeStyle=1;rounded=0;html=1;strokeColor=#168b77;strokeWidth=2.4;exitX=0.5;exitY=0;exitPerimeter=0;endArrow=block;endSize=10;endFill=1;jumpStyle=none;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="OGB9cYf404Pc4me5-RXQ-18" value="">
+          <mxGeometry relative="1" x="-0.2075" as="geometry">
             <Array as="points">
               <mxPoint x="77" y="26" />
-              <mxPoint x="1650" y="30" />
-              <mxPoint x="1650" y="309.5" />
+              <mxPoint x="1640" y="30" />
+              <mxPoint x="1640" y="283.25" />
             </Array>
             <mxPoint x="2079" y="369.5" as="targetPoint" />
           </mxGeometry>
@@ -272,7 +269,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-93" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=14;fontColor=#778ba3;" value="обновление когорт" vertex="1">
-          <mxGeometry height="20" width="144" x="1356.5" y="414" as="geometry" />
+          <mxGeometry height="20" width="144" x="1318" y="369.5" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-94" edge="1" parent="OGB9cYf404Pc4me5-RXQ-1" source="OGB9cYf404Pc4me5-RXQ-20" style="endArrow=classic;startArrow=classic;html=1;rounded=0;strokeColor=light-dark(#778ba3, #ededed);strokeWidth=2.4;dashed=1;dashPattern=8 8;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="OGB9cYf404Pc4me5-RXQ-39" value="">
           <mxGeometry height="50" relative="1" width="50" as="geometry">
@@ -344,7 +341,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-106" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=14;fontColor=#8649ba;" value="{region}.game.finished" vertex="1">
-          <mxGeometry height="24" width="155" x="2490" y="570" as="geometry" />
+          <mxGeometry height="24" width="155" x="2655" y="760" as="geometry" />
         </mxCell>
         <mxCell id="OGB9cYf404Pc4me5-RXQ-107" parent="OGB9cYf404Pc4me5-RXQ-1" style="rounded=1;arcSize=13;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacing=6;fillColor=#ecf4ff;strokeColor=#4c83c9;strokeWidth=2;shadow=0;" value="&lt;div style=&quot;font-family:Arial;line-height:1.18&quot;&gt;&lt;b style=&quot;font-size:17px&quot;&gt;Rating Worker&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
           <mxGeometry height="94" width="242" x="1250" y="1108" as="geometry" />
@@ -459,6 +456,19 @@
         </mxCell>
         <mxCell id="MV86kIaW1BpslOYPYexV-1" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=14;fontColor=#8649ba;" value="резервное восстановление (checkpoints + moves)" vertex="1">
           <mxGeometry height="24" width="345" x="2104" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="LbfBe5AuGLHM4KGWNS8B-0" edge="1" parent="OGB9cYf404Pc4me5-RXQ-1" source="OGB9cYf404Pc4me5-RXQ-13" style="edgeStyle=none;orthogonalLoop=0;noEdgeStyle=1;rounded=0;html=1;strokeColor=#2d69b2;strokeWidth=2.4;exitX=1;exitY=0.5;entryX=0;entryY=0.75;endArrow=block;endSize=10;endFill=1;exitDx=0;exitDy=0;entryDx=0;entryDy=0;dashed=1;dashPattern=8 8;jumpStyle=arc;" target="OGB9cYf404Pc4me5-RXQ-18" value="">
+          <mxGeometry relative="1" x="0.4094" as="geometry">
+            <Array as="points">
+              <mxPoint x="1640" y="430" />
+              <mxPoint x="1640" y="335.75" />
+            </Array>
+            <mxPoint x="1780" y="400" as="sourcePoint" />
+            <mxPoint x="1928" y="579" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="LbfBe5AuGLHM4KGWNS8B-1" parent="OGB9cYf404Pc4me5-RXQ-1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fillColor=none;strokeColor=none;fontFamily=Arial;fontSize=14;fontColor=light-dark(#2d69b2, #a8a8ff);" value="выбор server_id + wss_irl" vertex="1">
+          <mxGeometry height="20" width="183" x="1667" y="308.5" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
